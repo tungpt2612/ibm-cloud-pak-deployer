@@ -1,0 +1,20 @@
+apiVersion: appconnect.ibm.com/v1beta1
+kind: DesignerAuthoring
+metadata:
+  name: {{instance_properties.name}}
+  namespace: {{current_cp4i_cluster.project}}
+spec:
+  couchdb:
+    replicas: 1
+    storage:
+      size: 10Gi
+      type: persistent-claim
+      class: {{ocp_storage_class_block}}
+  designerFlowsOperationMode: local
+  license:
+    accept: {{ _cpd_accept_licenses | default(False) }}
+    license: {{instance_properties.license}}
+    use: CloudPakForIntegrationNonProduction
+  replicas: 1
+  useCommonServices: true
+  version: "{{instance_properties.version}}"

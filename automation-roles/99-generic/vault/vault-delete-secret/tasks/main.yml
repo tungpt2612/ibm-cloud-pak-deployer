@@ -1,0 +1,16 @@
+---
+- name: Validate mandatory variables are defined for Delete Secret
+  assert:
+    that:
+      - _p_vault_secrets is defined or secret_name is defined
+      - secret_group is defined
+
+- name: Delete secret
+  include_tasks: delete-secret.yml
+  vars:
+    secret_name: "{{ item.key }}"
+  with_dict: "{{ _p_vault_secrets }}"
+  when: _p_vault_secrets is defined
+
+- include_tasks: delete-secret.yml
+  when: _p_vault_secrets is not defined

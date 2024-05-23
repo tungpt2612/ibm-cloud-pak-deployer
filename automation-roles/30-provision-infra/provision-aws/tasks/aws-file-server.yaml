@@ -1,0 +1,36 @@
+---
+- name: Check if file server {{ _current_nfs_server.name }} already exists
+  shell: |
+    aws efs describe-file-systems \
+      --query 'FileSystems[?Name==`{{ _current_nfs_server.name }}`].FileSystemId' \
+      --region {{ _current_nfs_server.infrastructure.aws_region }} --output json
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ _aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ _aws_secret_access_key }}"
+    AWS_SESSION_TOKEN: "{{ _aws_session_token }}"
+  register: _aws_describe_fs
+
+- name: Get file system ID for {{ _current_nfs_server.name }}
+  set_fact:
+    _aws_fs_id: "{{ _aws_describe_fs.stdout | from_json | first }}"
+  when: (_aws_describe_fs.stdout | from_json) != []
+
+# If file system doesn't exist, create it
+- block:
+  - name: Create file system {{ _current_nfs_server.name }} if not existent
+    shell: |
+      aws efs create-file-system \
+        --performance-mode generalPurpose \
+        --throughput-mode elastic \
+        --encrypted \
+        --region {{ _current_nfs_server.infrastructure.aws_region }} \
+        --tags Key=Name,Value={{ _current_nfs_server.name }}
+    environment:
+      AWS_ACCESS_KEY_ID: "{{ _aws_access_key }}"
+      AWS_SECRET_ACCESS_KEY: "{{ _aws_secret_access_key }}"
+      AWS_SESSION_TOKEN: "{{ _aws_session_token }}"
+    register: _aws_create_fs
+  - name: Get file system ID for {{ _current_nfs_server.name }}
+    set_fact:
+      _aws_fs_id: "{{ (_aws_create_fs.stdout | from_json).FileSystemId }}"
+  when: (_aws_describe_fs.stdout | from_json) == []

@@ -1,0 +1,11 @@
+---
+- include_role:
+    name: openshift-get-version
+    
+- name: Create KubeletConfig db2u-kubelet
+  include_tasks: create-kubelet-config.yml
+  when: _mco_exists
+
+- name: Apply KubeletConfig if the Machine Config Operator does not exist
+  include_tasks: non-mco-apply-kubelet-config.yml
+  when: not _mco_exists

@@ -1,0 +1,103 @@
+- name: Create Project
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: create-project
+  vars:
+    common_namespace_name: "{{ cp4ba_project_name }}"
+    common_output_directory: "{{ cp4ba_output_directory }}"
+
+- name: Prepare yaml file for CatalogSource
+  ansible.builtin.template:
+    src: catalogsource.yaml.j2
+    dest: "{{ cp4ba_output_directory }}/catalogsource.yaml"
+    mode: u+rwx
+
+- name: Add CatalogSource
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ cp4ba_output_directory }}/catalogsource.yaml"
+    wait: true
+    wait_sleep: 15
+    wait_timeout: 15
+
+- name: Wait for CatalogSource
+  kubernetes.core.k8s_info:
+    api_version: v1alpha1
+    kind: CatalogSource
+    name: "{{ item }}"
+    namespace: "{{ cp4ba_project_name }}"
+  register: catalogsource
+  retries: 40
+  delay: 5
+  until: ('READY' in catalogsource | json_query('resources[*].status.connectionState.lastObservedState') | unique)
+  with_items:
+    - ibm-cp4a-operator-catalog
+    - ibm-cs-flink-operator-catalog
+    - ibm-cs-elastic-operator-catalog
+    - opencloud-operators-{{ cpfs_cs_version }}
+    - bts-operator
+    - cloud-native-postgresql-catalog
+    - ibm-fncm-operator-catalog
+
+- name: Manage Operator
+  ansible.builtin.include_tasks: predeploy/operator.yml
+
+- name: Manage CPFS dedicated instance
+  ansible.builtin.include_tasks: predeploy/cpfs.yml
+
+- name: Manage Shared
+  ansible.builtin.include_tasks: predeploy/shared.yml
+
+- name: Manage RR
+  ansible.builtin.include_tasks: predeploy/rr.yml
+
+- name: Manage BAN
+  ansible.builtin.include_tasks: predeploy/ban.yml
+
+- name: Manage BAS
+  ansible.builtin.include_tasks: predeploy/bas.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.foundation.optional_components.bas
+
+- name: Manage AutomationBase Elastic Search
+  ansible.builtin.include_tasks: predeploy/iaf-automationbase.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.foundation.optional_components.bai or _current_cp4ba_cluster.cp4ba.patterns.workflow.enabled
+
+- name: Manage BAI
+  ansible.builtin.include_tasks: predeploy/bai.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.foundation.optional_components.bai
+
+- name: Manage ODM
+  ansible.builtin.include_tasks: predeploy/odm.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.decisions.enabled
+
+- name: Manage ADS
+  ansible.builtin.include_tasks: predeploy/ads.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.decisions_ads.enabled
+
+- name: Manage FNCM ES Google ID
+  ansible.builtin.include_tasks: predeploy/bai.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.content.enabled and _current_cp4ba_cluster.cp4ba.patterns.content.optional_components.es
+
+- name: Manage FNCM
+  ansible.builtin.include_tasks: predeploy/fncm.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.content.enabled
+
+- name: Manage IER
+  ansible.builtin.include_tasks: predeploy/ier.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.content.enabled and _current_cp4ba_cluster.cp4ba.patterns.content.optional_components.ier
+
+- name: Manage AAE
+  ansible.builtin.include_tasks: predeploy/aae.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.foundation.optional_components.ae
+
+- name: Manage AAE Data persistence
+  ansible.builtin.include_tasks: predeploy/aae-data-persistence.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.application.enabled and _current_cp4ba_cluster.cp4ba.patterns.application.optional_components.ae_data_persistence
+
+- name: Manage ADP
+  ansible.builtin.include_tasks: predeploy/adp.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.document_processing.enabled
+
+- name: Manage BAWAUT
+  ansible.builtin.include_tasks: predeploy/bawaut.yml
+  when: _current_cp4ba_cluster.cp4ba.patterns.workflow.enabled and _current_cp4ba_cluster.cp4ba.patterns.workflow.optional_components.baw_authoring

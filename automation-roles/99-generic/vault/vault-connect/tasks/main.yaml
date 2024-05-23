@@ -1,0 +1,55 @@
+---
+
+- name: Validate vault_type is supported
+  fail: msg="Vault type {{ vault_type }} only support values {{ supported_vault_types }} "
+  when: "vault_type not in supported_vault_types"
+
+- name: Validate vault_authentication_type is supported
+  fail: msg="Vault Authentication type (vault_authentication_type) only support values {{ supported_vault_authentication_types }} "
+  when: "vault_authentication_type not in supported_vault_authentication_types"
+
+- name: Login to Hashicorp vault
+  block:
+
+    - name: Validate mandatory variables are defined
+      assert:
+        that:
+          - vault_type is defined
+          - vault_authentication_type is defined
+
+    - include_tasks: connect-hashicorp-vault-api-key.yml
+      vars:
+        hashicorp_vault_address: "{{ vault_url }}"
+      when: vault_authentication_type == 'api-key'
+
+    - include_tasks: connect-hashicorp-vault-certificate.yml
+      vars:
+        hashicorp_vault_address: "{{ vault_url }}"
+      when: vault_authentication_type == 'certificate'      
+  when: "vault_type == 'hashicorp-vault'"
+
+- name: Login to IBMCloud vault
+  block:
+
+    - name: Validate mandatory variables are defined
+      assert:
+        that:
+          - vault_type is defined
+          - vault_authentication_type is defined
+
+    - include_tasks: connect-ibmcloud.yml
+      vars:
+        ibmcloud_vault_address: "{{ vault_url }}"
+        ibmcloud_api_key: "{{ vault_api_key }}"
+        ibmcloud_vault_group: "{{ vault_secret_group }}"
+  when: "vault_type == 'ibmcloud-vault'"  
+
+- name: Login to file vault
+  block:
+    - name: No login to file fault needed
+      debug:
+        msg: File vault directory is {{ status_dir }}/vault
+  when: "vault_type == 'file-vault'"  
+
+- set_fact:
+    vault_login_success: "true"

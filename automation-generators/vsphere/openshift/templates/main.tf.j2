@@ -1,0 +1,62 @@
+# {{ ansible_managed }}
+apiVersion: v1
+
+metadata:
+  name: {{ generator.attributes.name }}
+baseDomain: {{ generator.attributes.domain_name }}
+
+platform:
+  vsphere:
+    apiVIP: {{ generator.attributes.api_vip }}
+    ingressVIP: {{ generator.attributes.ingress_vip }}
+    cluster: {{ _vsphere_config.cluster }}
+    datacenter: {{ _vsphere_config.datacenter }}
+    defaultDatastore: {{ _vsphere_config.datastore }}
+    network: {{ _vsphere_config.network }}
+    vCenter: {{ _vsphere_config.vcenter }}
+    folder: {{ _vsphere_config.folder }}
+{% if (_vsphere_config.resource_pool | default('')) != '' %}
+    resourcePool: {{ _vsphere_config.resource_pool }}
+{% endif %}
+    username: {{ _vsphere_user }}
+    password: {{ _vsphere_password }}
+
+controlPlane:
+  hyperthreading: Enabled
+  name: control-plane
+  replicas: {{ generator.attributes.control_plane_nodes }}
+  platform:
+    vsphere:
+      cpus: {{ _control_plane_vm_config.vcpu }}
+      coresPerSocket: 2
+      memoryMB: {{ _control_plane_vm_config.memory_mb }}
+      osDisk:
+        diskSizeGB: {{ _control_plane_vm_config.boot_disk_size_gb }}
+
+compute:
+- hyperthreading: Enabled
+  name: worker
+  replicas: {{ generator.attributes.compute_nodes }}
+  platform:
+    vsphere:
+      cpus: {{ _compute_vm_config.vcpu }}
+      coresPerSocket: 2
+      memoryMB: {{ _compute_vm_config.memory_mb }}
+      osDisk:
+        diskSizeGB: {{ _compute_vm_config.boot_disk_size_gb }}
+
+networking:
+  clusterNetwork:
+{% if generator.attributes.infrastructure.openshift_cluster_network_cidr is defined  %}
+  - cidr: {{ generator.attributes.infrastructure.openshift_cluster_network_cidr }}
+    hostPrefix: 23
+{% else %}
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+{% endif %}
+  networkType: OpenShiftSDN
+  serviceNetwork:
+  - 172.30.0.0/16
+
+pullSecret: '{{ lookup("file","/tmp/ocp_pullsecret.json") }}'
+sshKey: '{{ _ocp_ssh_pub_key }}'

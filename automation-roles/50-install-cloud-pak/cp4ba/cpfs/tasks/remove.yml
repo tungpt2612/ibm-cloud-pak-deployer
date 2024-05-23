@@ -1,0 +1,81 @@
+# Based on https://www.ibm.com/docs/en/cpfs?topic=online-uninstalling-foundational-services
+
+- name: Remove ibm-lsr
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operator.ibm.com/v1alpha1
+    kind: IBMLicenseServiceReporter
+    name: ibm-lsr-instance
+    namespace: ibm-lsr
+    wait: true
+    wait_sleep: 5
+    wait_timeout: 50
+  register: response
+  failed_when: response.msg is defined and response.msg is not search('Failed to find exact match for.*')
+
+- name: Remove Catalog Source for ibm-lsr
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1alpha1
+    kind: CatalogSource
+    name: ibm-license-service-reporter-bundle-catalog
+    namespace: ibm-lsr
+    wait: true
+
+- name: Remove Project ibm-lsr
+  kubernetes.core.k8s:
+    state: absent
+    api_version: project.openshift.io/v1
+    kind: Project
+    name: ibm-lsr
+    wait: true
+    wait_sleep: 15
+    wait_timeout: 120
+
+- name: Remove ibm-licensing
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operator.ibm.com/v1alpha1
+    kind: IBMLicensing
+    name: instance
+    wait: true
+    wait_sleep: 5
+    wait_timeout: 50
+
+- name: Remove Catalog Source for ibm-licensing
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1alpha1
+    kind: CatalogSource
+    name: ibm-licensing-catalog
+    namespace: ibm-licensing
+    wait: true
+
+- name: Remove Project ibm-licensing
+  kubernetes.core.k8s:
+    state: absent
+    api_version: project.openshift.io/v1
+    kind: Project
+    name: ibm-licensing
+    wait: true
+    wait_sleep: 15
+    wait_timeout: 120
+
+- name: Remove Catalog Source for ibm-cert-manager
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1alpha1
+    kind: CatalogSource
+    name: ibm-cert-manager-catalog
+    namespace: ibm-cert-manager
+    wait: true
+
+- name: Remove Project ibm-cert-manager
+  kubernetes.core.k8s:
+    state: absent
+    api_version: project.openshift.io/v1
+    kind: Project
+    name: ibm-cert-manager
+    wait: true
+    wait_sleep: 15
+    wait_timeout: 120

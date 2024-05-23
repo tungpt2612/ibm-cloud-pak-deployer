@@ -1,0 +1,32 @@
+---
+global_config:
+  environment_name: sample
+  cloud_platform: existing-ocp
+  env_id: pluto-01
+  confirm_destroy: False
+
+#
+# This example defines an existing OpenShift on Satellite cluster with OpenShift Data Foundation (fka ocs) 
+# and its storage classes (sat-ocs-cephfs-gold, sat-ocs-cephrbd-gold) already created by deployment with Satellite storage template
+# The infrastructure.type==ibm-roks signifies that the Machine Config Operator is not present on the cluster, effectively
+# treating the cluster as a ROKS cluster
+#
+openshift:
+- name: "{{ env_id }}"
+  ocp_version: "4.10"
+  cluster_name: "{{ env_id }}"
+  domain_name: example.com
+  infrastructure:
+    type: ibm-roks
+  gpu:
+    install: False
+  mcg:
+    install: False
+    storage_type: storage-class
+    storage_class: not-specified
+  openshift_storage:
+  - storage_name: ocs-storagecluster
+    storage_type: custom
+# Use storage classes provided as part of Satellite ODF storage template 
+    ocp_storage_class_file: sat-ocs-cephfs-gold
+    ocp_storage_class_block: sat-ocs-cephrbd-gold

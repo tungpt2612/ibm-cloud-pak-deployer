@@ -1,0 +1,77 @@
+---
+- name: Get current storage class
+  debug:
+    var: current_openshift_storage
+
+- name: Retrieve infrastructure ID
+  shell: |
+    oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
+  register: _get_infrastructure_id
+
+- set_fact:
+    _infrastructure_id: "{{ _get_infrastructure_id.stdout }}"
+
+- name: Retrieve image details
+  shell: |
+    oc get machineset -n openshift-machine-api -o jsonpath='{range .items[0]}{.spec.template.spec.providerSpec.value.ami.id}{end}'
+  register: _get_image_details
+
+- set_fact:
+    _ami_id: "{{ _get_image_details.stdout }}"
+
+- debug:
+    var: _ami_id
+
+- debug:
+    var: _aws_zones
+
+- name: Generate MachineSet file {{status_dir}}/openshift/aws-ipi-ocs-machineset.yaml
+  template:
+    src: "aws-ipi-ocs-machineset.j2"
+    dest: "{{status_dir}}/openshift/aws-ipi-ocs-machineset.yaml"
+
+- name: Create or update machine set
+  shell: oc apply -f {{status_dir}}/openshift/aws-ipi-ocs-machineset.yaml
+
+- name: Wait for machine sets
+  include_tasks: wait-for-machine-set.yml
+  with_items: "{{ _aws_zones }}"
+  loop_control:
+    loop_var: _aws_zone
+
+- name: Install ODF operator
+  include_role: 
+    name: odf-operator
+
+- name: Check if StorageCluster ocs-storagecluster already exists
+  command: |
+    oc get StorageCluster ocs-storagecluster -n openshift-storage
+  failed_when: False
+  register: _ocs_cluster_exists
+
+- name: Generate ODF StorageCluster file {{status_dir}}/openshift/aws-ocs-storagecluster.yaml
+  template:
+    src: "aws-ocs-storagecluster.j2"
+    dest: "{{status_dir}}/openshift/aws-ocs-storagecluster.yaml"
+  when: _ocs_cluster_exists.rc != 0
+
+- name: Create ODF StorageCluster
+  shell: |
+    oc apply -f {{status_dir}}/openshift/aws-ocs-storagecluster.yaml
+  when: _ocs_cluster_exists.rc != 0
+
+- name: Wait until ODF StorageCluster has status Ready
+  shell: |
+    oc get StorageCluster ocs-storagecluster -n openshift-storage \
+     --no-headers \
+     -o custom-columns='name:metadata.name,phase:status.phase' | \
+     grep -i ready | wc -l
+  register: _ocs_csv_status
+  retries: 60
+  delay: 30
+  until: _ocs_csv_status.stdout == "1"
+  vars:
+    ansible_callback_diy_runner_retry_msg: >-
+      {%- set result = ansible_callback_diy.result.output -%}
+      {%- set retries_left = result.retries - result.attempts -%}
+      Retrying: {{ ansible_callback_diy.task.name }} ({{ retries_left }} Retries left) ...

@@ -1,0 +1,72 @@
+---
+- name: Validate mandatory variables are defined
+  assert:
+    that:
+      - cloud_platform is defined
+
+- name: Validate cloud_platform is implemented
+  fail: msg="cloud_platform {{ cloud_platform }} is not implemented, current implemented cloud platforms are {{ implemented_cloud_platform_types }} "
+  when: "cloud_platform not in implemented_cloud_platform_types"
+
+# Set retries and delay depending on whether successful login is required
+- set_fact:
+    _ocp_login_retries: 60
+    _ocp_login_delay: 10
+  when: _p_require_successful_ocp_login | default(True)
+
+- set_fact:
+    _ocp_login_retries: 5
+    _ocp_login_delay: 10
+  when: not (_p_require_successful_ocp_login | default(True))
+
+- name: Create OpenShift configuration directory
+  file:
+    path: "{{ status_dir }}/openshift"
+    state: directory
+
+- name: Retrieve OpenShift object from configuration
+  set_fact:
+    _openshift_cluster: "{{ all_config.openshift | json_query(query) | first | default({}) }}"
+  vars:
+    query: >-
+      [?name=='{{ _p_openshift_cluster_name }}']
+
+- name: Download and activate OpenShift client for version {{ _openshift_cluster.ocp_version }}
+  include_role:
+    name: openshift-download-client
+  vars:
+    _p_ocp_version: "{{ _openshift_cluster.ocp_version }}"
+
+- set_fact:
+    _p_oc_login_successful: True
+    
+- include_tasks: ibmcloud-login-roks-ocp.yml
+  when: cloud_platform == 'ibm-cloud'
+
+- include_tasks: existing-ocp-login-ocp.yml
+  when: cloud_platform == 'existing-ocp'
+
+- include_tasks: vsphere-login-ocp.yml
+  when: cloud_platform == 'vsphere'
+
+- include_tasks: azure-login-ocp.yml
+  when: cloud_platform == 'azure'
+
+- include_tasks: aws-login-ocp.yml
+  when: cloud_platform == 'aws'
+
+- name: Check that we can retrieve cluster information
+  shell: |
+    oc cluster-info
+  register: _oc_cluster_info
+  retries: 30
+  delay: 10
+  until: _oc_cluster_info.rc == 0
+  when: _p_oc_login_successful
+
+- name: Copy the kubeconfig file to the default location used by olm-utils
+  copy:
+    src: "{{ status_dir }}/openshift/kubeconfig"
+    dest: "/opt/ansible/.kubeconfig"
+    remote_src: True
+    mode: u+rwx

@@ -1,0 +1,64 @@
+---
+- name: Secrets
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_playbook_on_task_start_msg: ""
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+
+  - name: Load global config
+    include_role:
+      name: load-global-config
+
+  - name: Load vault config
+    include_role:
+      name: load-vault-config
+
+  - set_fact:
+      secret_group: "{{ secret_group_param }}"
+
+  - set_fact:
+      secret_group: "{{ environment_name }}"
+    when: secret_group_param | default("") == ""
+
+  - fail:
+      msg: "Secret group must be specified"
+    when: secret_group == ""
+
+  - name: Show secret group
+    debug:
+      var: secret_group
+
+  - include_role:
+      name: vault-connect
+
+  - include_role:
+      name: vault-list-secrets
+    when: ACTION == "list"
+
+  - include_role:
+      name: vault-set-secret
+    vars:
+      _p_vault_secrets: "{{ lookup('ansible.builtin.env', 'VAULT_SECRETS') }}"
+    when: ACTION == "set"
+
+  - include_role:
+      name: vault-delete-secret
+    vars:
+      _p_vault_secrets: "{{ lookup('ansible.builtin.env', 'VAULT_SECRETS') }}"
+    when: ACTION == "delete"
+
+  - include_role:
+      name: vault-get-secret
+    vars:
+      _p_vault_secrets: "{{ lookup('ansible.builtin.env', 'VAULT_SECRETS') }}"
+      show_secret: True
+    when: ACTION == "get"
+

@@ -1,0 +1,96 @@
+#!/bin/bash
+
+#
+# This script changes the node settings on every compute node for Cloud Pak for Data
+#
+
+NODE_UPDATED=0
+NODE_FIX_DIR=/tmp/cloud-pak-node-fix
+
+# Set global pull secret for RHEL nodes
+if [ -e /.docker/config.json ];then
+  if [ -e ${NODE_FIX_DIR}/secrets/newdockerconfigjson ];then
+    if ! cmp -s ${NODE_FIX_DIR}/secrets/newdockerconfigjson /.docker/config.json;then
+      cp ${NODE_FIX_DIR}/secrets/newdockerconfigjson /.docker/config.json
+      NODE_UPDATED=1
+      echo "Pull secret changed in /.docker/config.json" >> /tmp/cloud-pak-node-fix.log
+    fi
+  fi
+fi
+
+# Set global pull secret for CoreOS nodes
+if [ -e /root/.docker/config.json ];then
+  if [ -e ${NODE_FIX_DIR}/secrets/newdockerconfigjson ];then
+    jq -s '.[0] * .[1]' /root/.docker/config.json ${NODE_FIX_DIR}/secrets/newdockerconfigjson > ${NODE_FIX_DIR}/secrets/mergeddockerconfigjson
+    if ! cmp -s ${NODE_FIX_DIR}/secrets/mergeddockerconfigjson /root/.docker/config.json;then
+      cp ${NODE_FIX_DIR}/secrets/mergeddockerconfigjson /root/.docker/config.json
+      NODE_UPDATED=1
+      echo "Pull secret changed in /root/.docker/config.json" >> /tmp/cloud-pak-node-fix.log
+    fi
+  fi
+fi
+
+# Prepare for ImageContentSourcePolicy changes
+rm -f /tmp/registries.conf
+cp /etc/containers/registries.conf /tmp
+if [ $(ls -1 ${NODE_FIX_DIR}/config/cloud-pak-icsp*.conf 2>/dev/null | wc -l) -ne 0 ];then
+  sed -i '/## ICSP replacement START/,/## ICSP replacement END/d' /tmp/registries.conf
+  # Also remove Manta ICSP entry if it exists (supporting existing implementations)
+  sed -i '/## ICSP replacement MANTA START/,/## ICSP replacement MANTA END/d' /tmp/registries.conf
+  echo '## ICSP replacement START' >> /tmp/registries.conf
+fi
+
+# Add ImageContentSourcePolicy for private registries to registries.conf
+if [ -e ${NODE_FIX_DIR}/config/cloud-pak-icsp-registries.conf ];then
+  cat ${NODE_FIX_DIR}/config/cloud-pak-icsp-registries.conf >> /tmp/registries.conf
+fi
+
+# Add ImageContentSourcePolicy for Manta registries to registries.conf
+if [ -e ${NODE_FIX_DIR}/config/cloud-pak-icsp-registries-manta.conf ];then
+  cat ${NODE_FIX_DIR}/config/cloud-pak-icsp-registries-manta.conf >> /tmp/registries.conf
+fi
+
+if [ $(ls -1 ${NODE_FIX_DIR}/config/cloud-pak-icsp*.conf 2>/dev/null | wc -l) -ne 0 ];then
+  echo '## ICSP replacement END' >> /tmp/registries.conf
+fi
+
+# If changes were made to the registry, make sure the crio/kubelet services are restarted
+if ! cmp -s /tmp/registries.conf /etc/containers/registries.conf;then
+  cp -r /tmp/registries.conf /etc/containers/registries.conf
+  NODE_UPDATED=1
+  echo "Registries changes made to /etc/containers/registries.conf" >> /tmp/cloud-pak-node-fix.log
+fi
+
+# Change kubelet.conf to allow Db2 pods to run with unsafe Sysctls
+if [ -e ${NODE_FIX_DIR}/cp4d-apply-kubelet-config.sh ];then 
+  ${NODE_FIX_DIR}/cp4d-apply-kubelet-config.sh
+  if ! cmp -s ${NODE_FIX_DIR}/config/cp4d-kubelet.conf /etc/kubernetes/kubelet.conf;then
+    cp -r ${NODE_FIX_DIR}/config/cp4d-kubelet.conf /etc/kubernetes/kubelet.conf
+    NODE_UPDATED=1
+    echo "Kubelet configuration changes made in /etc/kubernetes/kubelet.conf" >> /tmp/cloud-pak-node-fix.log
+  fi
+fi
+
+# Change crio.conf to allow more processes in a container
+if [ -e ${NODE_FIX_DIR}/cp4d-apply-crio-config.sh ];then
+  ${NODE_FIX_DIR}/cp4d-apply-crio-config.sh
+  if ! cmp -s ${NODE_FIX_DIR}/config/cp4d-crio.conf /etc/crio/crio.conf;then
+    cp -r ${NODE_FIX_DIR}/config/cp4d-crio.conf /etc/crio/crio.conf
+    NODE_UPDATED=1
+    echo "CRI-O configuration changes made in /etc/crio/crio.conf" >> /tmp/cloud-pak-node-fix.log
+  fi
+fi
+
+if [ -e ${NODE_FIX_DIR}/apply-custom-node-settings.sh ];then
+  echo "Calling custom node update script ${NODE_FIX_DIR}/apply-custom-node-settings.sh" >> /tmp/cloud-pak-node-fix.log
+  source ${NODE_FIX_DIR}/apply-custom-node-settings.sh >> /tmp/cloud-pak-node-fix.log
+  echo "Custom script updated node settings (0=no, 1=yes): $NODE_UDPATED" >> /tmp/cloud-pak-node-fix.log
+fi
+
+if [ $NODE_UPDATED -eq 1 ];then
+  echo "Restarting kubelet and crio daemons" >> /tmp/cloud-pak-node-fix.log
+  systemctl restart kubelet
+  systemctl restart crio
+fi
+
+echo "Finished checking node cloud-pak node settings" >> /tmp/cloud-pak-node-fix.log

@@ -1,0 +1,46 @@
+---
+
+# Parameters:
+# - _p_subscr_name
+# - _p_namespace
+# - _p_channel
+# - _p_subscr_source
+
+# ------------ CHECK IF SUBSCRIPTION EXISTS -------------------------  
+
+- name: "Check if subscription {{ _p_subscr_name }} already exists"
+  shell: | 
+    oc get subscriptions.operators.coreos.com -n {{ _p_namespace }} | grep {{ _p_subscr_name }} | wc -l
+  register: subscription_exists
+
+- name: Create subscription if it does not already exist
+  block:  
+
+  # ------------ PREPARE AND APPLY YAML -----------------------------
+
+  - name: "Create subscription"
+    include_tasks: apply-template.yml
+    vars:
+      _p_template: "subscription.j2"
+      _p_dest_name: "{{ _p_subscr_name }}.yml"
+      _subscr_name: "{{ _p_subscr_name }}"
+      _subscr_namespace: "{{ _p_namespace }}"
+      _subscr_channel: "{{ _p_channel }}"
+      _subscr_source: "{{ _p_subscr_source }}"
+
+  # ---------- WAIT FOR SUBSCRIPTION TO BECOME READY ----------------
+
+  - name: "Waiting for subscription {{ _p_subscr_name }} in project {{ _p_namespace }} to become ready"
+    shell: |
+      csv=$(oc get subscriptions.operators.coreos.com -n {{ _p_namespace }} {{ _p_subscr_name }} -o json | jq -r .status.currentCSV)
+      if [[ "$csv" == "null" ]]; then
+        echo "null"
+      else
+        oc get clusterserviceversions.operators.coreos.com -n {{ _p_namespace }} ${csv} -o json 2>/dev/null | jq -r .status.phase
+      fi
+    register: pn_phase
+    retries: 100
+    delay: 20
+    until: pn_phase.stdout == "Succeeded"
+
+  when: "subscription_exists.stdout | trim == '0'"

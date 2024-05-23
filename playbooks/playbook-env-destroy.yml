@@ -1,0 +1,80 @@
+---
+- name: Destroy infrastructure
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+  environment:
+    KUBECONFIG: "{{ status_dir }}/openshift/kubeconfig"
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+
+    - name: Load global config
+      include_role:
+        name: load-global-config
+
+    - name: Load vault config
+      include_role:
+        name: load-vault-config
+
+    - set_fact:
+        secret_group: "{{ secret_group_param }}"
+
+    - set_fact:
+        secret_group: "{{ environment_name }}"
+      when: secret_group_param | default("") == ""
+
+    - name: Connect to Vault
+      include_role:
+        name: vault-connect
+
+    - name: Merge configuration
+      include_role:
+        name: merge-config
+      vars:
+        path_to_config_dir: "{{ config_dir }}"
+
+    - set_fact:
+        _vault_secrets: "{{ lookup('ansible.builtin.env', 'VAULT_SECRETS') }}"
+
+    - name: Set vault secrets if specified
+      include_role:
+        name: vault-set-secret
+      vars:
+        _p_vault_secrets: "{{ _vault_secrets }}"
+      when: _vault_secrets != ""
+
+    - name: Validate variables
+      include_role:
+        name: validate-variables-destroy
+        
+    - name: Lint configuration
+      include_role:
+        name: lint-config
+      vars:
+        path_to_generators_dir: "{{ generators_dir | default([(playbook_dir | dirname),'/automation-generators'] | join) }}"
+
+    - name: Download CLIs
+      include_role:
+        name: download-cli
+
+    - name: Download dependent CLIs and commands for the Cloud Paks
+      include_role:
+        name: download-cp-dependencies
+      when: not (cpd_check_only | default(False) | bool)
+            
+    - name: Destroy OpenShift cluster contents where needed
+      include_role:
+        name: destroy-openshift-config
+      loop: "{{ all_config.openshift | default([]) }}"
+      loop_control:
+        loop_var: current_openshift_cluster
+
+    - name: Destroy infrastructure
+      include_role:
+        name: destroy-infra

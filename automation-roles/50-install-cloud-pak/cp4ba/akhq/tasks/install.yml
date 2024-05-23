@@ -1,0 +1,77 @@
+# Based on https://github.com/tchiotludo/akhq
+
+- name: Create AKHQ directory for generated files
+  ansible.builtin.file:
+    path: "{{ akhq_output_directory }}"
+    state: directory
+    mode: u+rwx
+
+- name: Create Project
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: create-project
+  vars:
+    common_namespace_name: "{{ akhq_project_name }}"
+    common_output_directory: "{{ akhq_output_directory }}"
+
+- name: Import trusted CA from SSL certificate
+  community.general.java_cert:
+    cert_url: "iaf-system-kafka-bootstrap-{{ akhq_cp4ba_project_name }}.{{ apps_endpoint_domain }}"
+    keystore_path: "{{ akhq_output_directory }}/truststore.jks"
+    keystore_pass: "{{ akhq_universal_password }}"
+    keystore_create: true
+    state: present
+    cert_alias: iaf-ca
+
+- name: Load jks data
+  ansible.builtin.slurp:
+    src: "{{ akhq_output_directory }}/truststore.jks"
+  register: slurped_jks_data
+
+- name: Decode data and store as fact
+  ansible.builtin.set_fact:
+    _jks: "{{ slurped_jks_data.content }}"
+
+- name: Get OCP Apps Endpoint
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: apps-endpoint
+  vars:
+    common_output_to_var: "apps_endpoint_domain"
+  when: apps_endpoint_domain is not defined
+
+- name: Prepare yaml file for {{ item }}
+  ansible.builtin.template:
+    src: "{{ item }}.yaml.j2"
+    dest: "{{ akhq_output_directory }}/{{ item }}.yaml"
+    mode: u+rwx
+  with_items:
+    - configmaps
+    - secrets
+    - deployments
+    - services
+
+- name: Add {{ item.name }}
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ akhq_output_directory }}/{{ item.name }}.yaml"
+    wait: true
+    wait_sleep: "{{ item.wait_sleep }}"
+    wait_timeout: "{{ item.wait_timeout }}"
+  with_items:
+    - {name: configmaps, wait_sleep: 15, wait_timeout: 15}
+    - {name: secrets, wait_sleep: 15, wait_timeout: 15}
+    - {name: deployments, wait_sleep: 15, wait_timeout: 600}
+    - {name: services, wait_sleep: 15, wait_timeout: 15}
+
+- name: Crete Edge Route
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: create-edge-route
+  vars:
+    common_namespace_name: "{{ akhq_project_name }}"
+    common_route_name: "akhq-{{ akhq_project_name }}"
+    common_service_name: akhq
+    common_service_port: http
+    common_apps_endpoint_domain: "{{ apps_endpoint_domain }}"
+    common_output_directory: "{{ akhq_output_directory }}"

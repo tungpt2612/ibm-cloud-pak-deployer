@@ -1,0 +1,16 @@
+---
+- name: 20 - Prepare
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+  - name: Prepare deployer environment
+    include_role:
+      name: prepare-deployer

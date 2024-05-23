@@ -1,0 +1,49 @@
+---
+- name: Validate cloud_platform is implemented
+  fail: msg="cloud_platform {{ cloud_platform }} is not implemented, current implemented cloud platforms are {{ implemented_cloud_platform_types }} "
+  when: "cloud_platform not in implemented_cloud_platform_types"
+
+- set_fact:
+    _azure_config: "{{ all_config.azure | json_query(query) | first | default({}) }}"
+  vars:
+    query: >-
+      [?name=='{{ current_openshift_cluster.azure_name }}']
+
+- name: Destroy info
+  debug:
+    msg: Cluster "{{ current_openshift_cluster.name }}" and any other resources in the resource group "{{ _azure_config.resource_group.name }}" will be destroyed
+
+- include_role:
+    name: azure-login-sp
+  vars:
+    _p_az_sp_name: "{{ _azure_config.sp_name }}"
+
+- name: Check if resource group {{ _azure_config.resource_group.name }} still exists
+  shell: |
+    az group show --resource-group {{ _azure_config.resource_group.name }}
+  failed_when: False
+  register: _show_rg
+
+- name: Destroy Azure ARO cluster
+  include_tasks: destroy-azure-aro.yml
+  when: 
+  - current_openshift_cluster.infrastructure.type  == 'aro'
+  - _show_rg.rc == 0
+
+- name: Destroy Azure self-managed (IPI) Openshift
+  include_tasks: destroy-azure-ipi.yml
+  when: 
+  - current_openshift_cluster.infrastructure.type  == 'self-managed'
+  - _show_rg.rc == 0
+
+- name: Delete "{{ current_openshift_cluster.name }}-kubeadmin-password" secret from the vault
+  include_role:
+    name: vault-delete-secret
+  vars:
+    secret_name: "{{ current_openshift_cluster.name }}-kubeadmin-password"
+    secret_group: "{{ environment_name }}"
+
+- name: Delete {{ status_dir }}/azure/{{ current_openshift_cluster.name }} directory
+  file:
+    path: "{{ status_dir }}/azure/{{ current_openshift_cluster.name }}"
+    state: absent

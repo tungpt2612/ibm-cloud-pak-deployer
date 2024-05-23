@@ -1,0 +1,101 @@
+---
+- name: Create catalog sources from case files in {{ status_dir }}/cp4d/case using OLM utils
+  debug:
+    msg: ""
+
+- name: Ensure that OLM utils work directory exists
+  file:
+    path: /tmp/work
+    state: directory
+
+- name: Delete offline directory
+  file:
+    path: /tmp/work/offline
+    state: absent
+
+- name: If air-gapped, copy case files from {{ status_dir }}/cp4d/offline to /tmp/work/offline
+  copy:
+    src: "{{ status_dir }}/cp4d/offline"
+    dest: /tmp/work/
+    remote_src: True
+  when: (cpd_airgap | default(False) | bool)
+
+# Always generate the preview script to log what will be done
+- name: Generate command preview script to create catalog sources
+  set_fact:
+    _apply_olm_command_script: "{{ lookup('template', 'apply-olm-create-catsrc.j2') }}" 
+  vars:
+    _p_preview_script: True
+
+- name: Show apply-olm command to create catalog sources
+  debug:
+    var: _apply_olm_command_script
+
+- name: Write script to "{{ status_dir }}/cp4d/apply-olm-catsrc.sh"
+  copy:
+    content: "{{ _apply_olm_command_script }}"
+    dest: "{{ status_dir }}/cp4d/apply-olm-catsrc.sh"
+
+- name: Generate preview script to create catalog sources, logs are in {{ status_dir }}/log/apply-olm-create-catsrc.log
+  shell: |
+    {{ _apply_olm_command_script }} > {{ status_dir }}/log/apply-olm-create-catsrc.log 2>&1
+
+- name: Copy script to {{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh
+  copy:
+    src: "/tmp/work/preview.sh"
+    dest: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    remote_src: True
+    mode: u+rwx
+
+# TODO: Remove step once problem in preview.sh is fixed
+- name: Update script to fix invalid oc apply -f commands
+  replace:
+    path: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    regexp: '^(.*)oc apply -f << EOF(.*)'
+    replace: 'oc apply -f - << EOF'
+
+# TODO: Remove step once problem in olm-utils is fixed
+- name: Update script to fix invalid cpd-platform catalog source image
+  replace:
+    path: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    regexp: '^  image: icr.io/cpopen/ibm-cpd-platform-operator-catalog@sha256:953403f1d7193fedb81186ec454fae3ea0852ef4c1929c3c56f12352189b1766'
+    replace: '  image: icr.io/cpopen/ibm-cpd-platform-operator-catalog@sha256:54d3d7aff34444eb1991335831c18272ad217a6445f898e22f0b30f539b8c7cf'
+
+# TODO: Remove step once problem in olm-utils is fixed
+- name: Update script to fix invalid ws-pipelines create catalog source command
+  replace:
+    path: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    regexp: '(ibm-ws-pipelines-\d.\d.\d)(.tgz)'
+    replace: '\1*\2'
+
+# TODO: Remove step once problem in olm-utils is fixed
+- name: Update script to fix invalid replication create catalog source command
+  replace:
+    path: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    regexp: '(ibm-replication-\d.\d.\d)(.tgz)'
+    replace: '\1*\2'
+
+# TODO: Remove step once problem in olm-utils is fixed
+- name: Update script to fix invalid DataGate create catalog source command
+  replace:
+    path: "{{ status_dir }}/cp4d/{{ _p_current_cp4d_cluster.project }}-create-catsrc.sh"
+    regexp: '(ibm-datagate-prod-\d.\d.\d)(.tgz)'
+    replace: '\1*\2'
+
+- name: Run apply-olm command to create catalog sources
+  block:
+  - name: Generate OLM command to create catalog sources
+    set_fact:
+      _apply_olm_command: "{{ lookup('template', 'apply-olm-create-catsrc.j2') }}" 
+    vars:
+      _p_preview_script: False
+  - name: Run apply-olm command to create catalog sources, logs are in {{ status_dir }}/log/apply-olm-create-catsrc.log
+    shell: |
+      {{ _apply_olm_command }} > {{ status_dir }}/log/apply-olm-create-catsrc.log 2>&1
+
+- name: If not air-gapped, copy case files from /tmp/work/offline to {{ status_dir }}/cp4d/offline
+  copy:
+    src: /tmp/work/offline
+    dest: "{{ status_dir }}/cp4d/"
+    remote_src: True
+  when: not (cpd_airgap | default(False) | bool)

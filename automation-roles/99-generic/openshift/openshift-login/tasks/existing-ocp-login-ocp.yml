@@ -1,0 +1,80 @@
+---
+- name: Get oc login command for OpenShift cluster {{ _p_openshift_cluster_name }} from secret {{ _p_openshift_cluster_name }}-oc-login
+  include_role: 
+    name: vault-get-secret
+  vars:
+    secret_name: "{{ _p_openshift_cluster_name }}-oc-login"
+    secret_group: "{{ environment_name }}"
+    _p_secret_variable: _oc_login_cluster
+
+- name: Get generic oc login command from vault secret oc-login
+  include_role: 
+    name: vault-get-secret
+  vars:
+    secret_name: "oc-login"
+    secret_group: "{{ environment_name }}"
+    _p_secret_variable: _oc_login_generic
+
+- name: Get {{ _p_openshift_cluster_name }}-kubeconfig secret for OpenShift cluster
+  include_role: 
+    name: vault-get-secret
+  vars:
+    secret_name: "{{ _p_openshift_cluster_name }}-kubeconfig"
+    secret_group: "{{ environment_name }}"
+    _p_secret_variable: _kubeconfig_cluster
+
+- name: Get generic kubeconfig secret if {{ _p_openshift_cluster_name }}-kubeconfig does not exist
+  include_role: 
+    name: vault-get-secret
+  vars:
+    secret_name: "kubeconfig"
+    secret_group: "{{ environment_name }}"
+    _p_secret_variable: _kubeconfig_generic
+
+- tempfile:
+    state: file
+  register: _oc_whoami_kubeconfig
+
+# Override the KUBECONFIG variable to a non-existing file to make sure the service account is returned
+# Otherwise, if an expired token is in the KUBECONFIG file, the oc whoami command just return the
+# "error: You must be logged in to the server (Unauthorized) message"
+- name: Check if the container is running as an OpenShift ServiceAccount
+  shell: |
+    oc whoami
+  failed_when: False
+  register: _oc_whoami
+  environment:
+    KUBECONFIG: "{{ _oc_whoami_kubeconfig.path }}"
+
+- name: Fail if none of the OpenShift connection secrets were found
+  fail:
+    msg: >
+      One of the secrets
+      {{ _p_openshift_cluster_name }}-oc-login, oc-login, {{ _p_openshift_cluster_name }}-kubeconfig or kubeconfig
+      is required to connect to OpenShift, or deployer must run in an OpenShift pod using a service accouunt with cluster-admin permissions.
+  when: 
+  - _oc_login_cluster == ''
+  - _oc_login_generic == ''
+  - _kubeconfig_cluster == ''
+  - _kubeconfig_generic == ''
+  - _oc_whoami.rc != 0 or not ((_oc_whoami.stdout | default('')) is search('system:serviceaccount'))
+
+# Log in using oc login
+- include_tasks: existing-ocp-login-oc-login.yml
+  when: _oc_login_generic != '' or _oc_login_cluster != ''
+
+# Log in using kubeconfig
+- include_tasks: existing-ocp-login-kubeconfig.yml
+  when:
+  - _oc_login_generic == ''
+  - _oc_login_cluster == ''
+  - _kubeconfig_cluster != '' or _kubeconfig_generic != ''
+
+# Log in using serviceaccount token
+- include_tasks: existing-ocp-login-serviceaccount.yml
+  when:
+  - _oc_login_generic == ''
+  - _oc_login_cluster == ''
+  - _kubeconfig_cluster == '' 
+  - _kubeconfig_generic == ''
+  - _oc_whoami.rc == 0

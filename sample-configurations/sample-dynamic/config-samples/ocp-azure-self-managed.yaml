@@ -1,0 +1,51 @@
+---
+global_config:
+  environment_name: sample
+  cloud_platform: azure
+  azure_location: westeurope
+  env_id: pluto-01
+  confirm_destroy: False
+  
+azure:
+- name: "{{ env_id }}-infra"
+  sp_name: "{{ env_id }}-sp"
+  resource_group:
+    name: "{{ env_id }}-rg"
+    location: "{{ azure_location }}"
+  vnet:
+    name: "{{ env_id }}-vnet"
+    address_space: 10.0.0.0/22
+  control_plane:
+    subnet:
+      name: "{{ env_id }}-control-plane-subnet"
+      address_prefixes: 10.0.0.0/23
+  compute:
+    subnet:
+      name: "{{ env_id }}-compute-subnet"
+      address_prefixes: 10.0.2.0/23
+
+openshift:
+- name: "{{ env_id }}"
+  azure_name: "{{ env_id }}-infra"
+  domain_name: "{{ env_id }}.eu"
+  domain_resource_group: "{{ env_id }}-domain-rg"
+  ocp_version: 4.10.54
+  control_plane_flavour: Standard_D8s_v3
+  compute_flavour: Standard_D16s_v3
+  compute_disk_size_gb: 300
+  compute_nodes: 3
+  infrastructure:
+    type: self-managed
+  network:
+    pod_cidr: "10.128.0.0/14"
+    service_cidr: "172.30.0.0/16"
+  mcg:
+    install: False
+    storage_type: storage-class
+    storage_class: not-specified
+  openshift_storage:
+  - storage_name: ocs-storage
+    storage_type: ocs
+    ocs_storage_label: ocs
+    ocs_storage_size_gb: 512
+    ocs_dynamic_storage_class: managed-csi

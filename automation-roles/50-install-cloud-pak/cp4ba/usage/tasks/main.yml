@@ -1,0 +1,7 @@
+- name: Install Usage
+  ansible.builtin.include_tasks: install.yml
+  when: "usage_action == 'install'"
+
+- name: Remove Usage
+  ansible.builtin.include_tasks: remove.yml
+  when: "usage_action == 'remove'"

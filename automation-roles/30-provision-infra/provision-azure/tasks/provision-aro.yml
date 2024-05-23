@@ -1,0 +1,22 @@
+---
+- set_fact:
+    _azure_config: "{{ all_config.azure | json_query(query) | first | default({}) }}"
+  vars:
+    query: >-
+      [?name=='{{ _current_openshift_cluster.azure_name }}']
+
+- include_role:
+    name: azure-login-sp
+  vars:
+    _p_az_sp_name: "{{ _azure_config.sp_name }}"
+    
+- name: Check if ARO cluster {{ _current_openshift_cluster.name }} already exists
+  shell: |
+    az aro show --name {{ _current_openshift_cluster.name }} --resource-group {{ _azure_config.resource_group.name }}
+  failed_when: False
+  register: _aro_cluster
+
+- include_tasks: create-aro-cluster.yml
+  when: _aro_cluster.rc != 0
+
+- include_tasks: set-aro-kubeadmin-password.yml

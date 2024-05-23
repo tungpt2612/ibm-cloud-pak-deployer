@@ -1,0 +1,15 @@
+spec:
+  bastudio_configuration:
+    admin_user: "{{ lc_principal_admin_user }}"
+    database:
+      host: "{{ cp4ba_postgresql_hostname }}"
+      type: postgresql
+      name: basdb
+      port: "5432"
+    playback_server:
+      admin_user: "{{ lc_principal_admin_user }}"
+      database:
+        host: "{{ cp4ba_postgresql_hostname }}"
+        name: appdb
+        port: "5432"
+        type: postgresql

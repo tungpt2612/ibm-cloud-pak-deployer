@@ -1,0 +1,43 @@
+---
+- set_fact:
+    _threads_per_core: "{{ _p_license_threads_per_core | default(1) }}"
+
+- include_tasks: get-latest-cp4d-version.yml
+  when: (_p_cp4d_version | default('')) == ''
+
+- name: Delete offline directory
+  file:
+    path: /tmp/work/offline
+    state: absent
+
+- name: If air-gapped, copy case files from {{ _v_template_dest_directory }}/offline to /tmp/work/offline
+  copy:
+    src: "{{ _v_template_dest_directory }}/offline"
+    dest: /tmp/work/
+    remote_src: True
+  when: (cpd_airgap | default(False) | bool)
+
+- set_fact:
+    _cert_manager_project: 'ibm-cert-manager'
+
+- set_fact:
+    _cert_manager_project: 'cert-manager'
+  when: (_p_cert_manager | default('ibm')) != 'ibm'
+
+- name: Generate apply-cluster-components script {{ _v_template_dest_directory }}/{{ _p_openshift_cluster_name }}-apply-cluster-components.sh
+  template:
+    src: apply-cluster-components.j2
+    dest: "{{ _v_template_dest_directory }}/{{ _p_openshift_cluster_name }}-apply-cluster-components.sh"
+    mode: u+rwx
+
+- name: Run shell script to apply cluster components on OpenShift cluster {{ _p_openshift_cluster_name }}, logs are in {{ status_dir }}/log/{{ _p_openshift_cluster_name }}-apply-cluster-components.log
+  shell: |
+    {{ _v_template_dest_directory }}/{{ _p_openshift_cluster_name }}-apply-cluster-components.sh
+  when: 
+  - not _p_preview
+
+- name: Set number of threads per core to {{ _threads_per_core }}
+  shell: |
+    oc patch ibmlicensing instance \
+      --type=merge \
+      -p '{"spec": {"features": {"hyperThreading": {"threadsPerCore" : {{ _threads_per_core }}  }}}}'

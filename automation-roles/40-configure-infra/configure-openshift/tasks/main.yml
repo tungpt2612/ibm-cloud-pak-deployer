@@ -1,0 +1,73 @@
+---
+- name: Show OpenShift cluster that is being processed
+  debug:
+    msg: "Handling OpenShift cluster {{ current_openshift_cluster.name }}"
+
+- name: Login to the OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: openshift-login
+  vars:
+    _p_openshift_cluster_name: "{{ current_openshift_cluster.name }}"
+
+- name: Set OpenShift console banner if specified
+  include_role:
+    name: openshift-console-banner
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"
+
+- name: Retrieve or detect cloud infra
+  include_role:
+    name: retrieve-cloud-infra-type
+  vars:
+    _p_openshift_cluster_name: "{{ current_openshift_cluster.name }}"
+
+- name: OpenShift Advanced Data Protection operator
+  include_role:
+    name: openshift-adp
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"
+
+- name: OpenShift NACL Security
+  include_role:
+    name: openshift-nacl-security
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"
+
+- name: Configure Cloud Native Toolkit OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: cloud-native-toolkit
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"
+
+- name: Configure upstream DNS for OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: configure-openshift-dns
+  vars:
+    _p_upstream_dns: "{{ current_openshift_cluster.upstream_dns | default([]) }}"
+
+- name: Configure logging for OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: openshift-logging
+
+- name: Configure monitoring for OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: openshift-monitoring
+
+- name: Prepare storage for OpenShift cluster {{ current_openshift_cluster.name }}
+  include_role:
+    name: prepare-openshift-storage
+  loop: "{{ current_openshift_cluster.openshift_storage | default([]) }}"
+  loop_control:
+    loop_var: current_openshift_storage
+
+- name: Configure Multi-Cloud Object Gateway
+  include_role:
+    name: openshift-mcg
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"
+
+- name: Configure GPU for the OpenShift cluster
+  include_role:
+    name: openshift-gpu
+  vars:
+    _p_openshift_cluster: "{{ current_openshift_cluster }}"

@@ -1,0 +1,97 @@
+- name: Create Mail directory for generated files
+  ansible.builtin.file:
+    path: "{{ mail_output_directory }}"
+    state: directory
+    mode: u+rwx
+
+- name: Create Project
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: create-project
+  vars:
+    common_namespace_name: "{{ mail_project_name }}"
+    common_output_directory: "{{ mail_output_directory }}"
+
+- name: Generate an OpenSSL private key
+  community.crypto.openssl_privatekey:
+    path: "{{ mail_output_directory }}/mailserver.key"
+
+- name: Generate an OpenSSL Certificate Signing Request with Subject information
+  community.crypto.openssl_csr:
+    path: "{{ mail_output_directory }}/mailserver.csr"
+    privatekey_path: "{{ mail_output_directory }}/mailserver.key"
+    subject: "CN=mailserver"
+    subject_alt_name: DNS:mailserver
+
+- name: Check that the {{ mail_ca_key_path }} exists
+  ansible.builtin.stat:
+    path: "{{ mail_ca_key_path }}"
+  register: mail_ca_key_file
+
+- name: Check that the {{ mail_ca_crt_path }} exists
+  ansible.builtin.stat:
+    path: "{{ mail_ca_crt_path }}"
+  register: mail_ca_crt_file
+
+- name: Ensure we have CA certificates
+  ansible.builtin.include_role:
+    name: global_ca
+  when: not mail_ca_key_file.stat.exists or not mail_ca_crt_file.stat.exists
+
+- name: Generate a Self Signed OpenSSL certificate
+  community.crypto.x509_certificate:
+    path: "{{ mail_output_directory }}/mailserver.crt"
+    privatekey_path: "{{ mail_output_directory }}/mailserver.key"
+    csr_path: "{{ mail_output_directory }}/mailserver.csr"
+    provider: ownca
+    ownca_path: "{{ mail_ca_crt_path }}"
+    ownca_privatekey_path: "{{ mail_ca_key_path }}"
+    ownca_not_after: "+36500d"
+
+- name: Load TLS key data
+  ansible.builtin.slurp:
+    src: '{{ mail_output_directory }}/mailserver.key'
+  register: slurped_key_data
+
+- name: Decode data and store as fact
+  ansible.builtin.set_fact:
+    _tls_key: "{{ slurped_key_data.content }}"
+
+- name: Load TLS crt data
+  ansible.builtin.slurp:
+    src: '{{ mail_output_directory }}/mailserver.crt'
+  register: slurped_crt_data
+
+- name: Decode data and store as fact
+  ansible.builtin.set_fact:
+    _tls_crt: "{{ slurped_crt_data.content }}"
+
+- name: Prepare yaml file for {{ item }}
+  ansible.builtin.template:
+    src: "{{ item }}.yaml.j2"
+    dest: "{{ mail_output_directory }}/{{ item }}.yaml"
+    mode: u+rwx
+  with_items:
+    - serviceaccounts
+    - rolebindings
+    - configmaps
+    - secrets
+    - persistentvolumeclaims
+    - deployments
+    - services
+
+- name: Add {{ item.name }}
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ mail_output_directory }}/{{ item.name }}.yaml"
+    wait: true
+    wait_sleep: "{{ item.wait_sleep }}"
+    wait_timeout: "{{ item.wait_timeout }}"
+  with_items:
+    - {name: serviceaccounts, wait_sleep: 15, wait_timeout: 15}
+    - {name: rolebindings, wait_sleep: 15, wait_timeout: 15}
+    - {name: configmaps, wait_sleep: 15, wait_timeout: 15}
+    - {name: secrets, wait_sleep: 15, wait_timeout: 15}
+    - {name: persistentvolumeclaims, wait_sleep: 15, wait_timeout: 300}
+    - {name: deployments, wait_sleep: 15, wait_timeout: 600}
+    - {name: services, wait_sleep: 15, wait_timeout: 15}

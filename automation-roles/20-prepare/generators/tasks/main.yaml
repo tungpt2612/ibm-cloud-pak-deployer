@@ -1,0 +1,36 @@
+---
+- name: Check that all required variables are set for the generators
+  assert:
+    quiet: true
+    that:
+      - "{{item}} is defined"
+    fail_msg: "'{{item}}' needs to be set for this role to work"
+  with_items:
+  - path_to_config_dir
+  - path_to_generators_dir
+
+- name: Delete terraform work folder if it exists
+  file:
+    path: '{{status_dir}}/terraform'
+    state: absent
+
+- name: Create terraform work folder
+  file:
+    path: '{{status_dir}}/terraform'
+    state: directory
+  when: cloud_platform == 'ibm-cloud'
+
+- name: Delete vSphere IPI work folder if it already exists
+  file:
+    path: '{{status_dir}}/vsphere-ipi'
+    state: absent
+  when: cloud_platform == 'vsphere'
+  
+- name: Run generators
+  include_tasks: run-object-type-generator.yml
+  vars:
+    GENERATOR_NAME: "{{ _all_config_item.key }}"
+    GENERATOR_ATTRIBUTES: "{{ _all_config_item.value }}"
+  loop: "{{ all_config | dict2items }}"
+  loop_control:
+    loop_var: _all_config_item

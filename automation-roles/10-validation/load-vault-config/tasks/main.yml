@@ -1,0 +1,17 @@
+---
+- name: Load yaml files for vault configuration
+  include_vars:
+    dir: "{{ config_dir }}/config"
+    files_matching: '.*\.yaml$'
+
+- name: Read vault config
+  include_tasks: read-vault-config.yml
+  when: vault | default({}) != {}
+
+- set_fact:
+    vault_type: "file-vault"
+  when: vault_type is not defined
+
+- set_fact:
+    vault_authentication_type: "none"
+  when: vault_authentication_type is not defined

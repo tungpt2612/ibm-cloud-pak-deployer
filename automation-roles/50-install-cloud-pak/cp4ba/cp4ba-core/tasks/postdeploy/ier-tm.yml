@@ -1,0 +1,80 @@
+- name: Get TM pod
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ cp4ba_project_name }}"
+    label_selectors:
+      - "app={{ cp4ba_cr_meta_name }}-tm-deploy"
+  register: tm_pod
+
+# Based on https://www.ibm.com/docs/en/enterprise-records/5.2.1?topic=in-configuring-content-navigator-task-manager-enterprise-records
+# Omit TM-Liberty.xml as it is already in cp4ba-tm-config
+- name: Download Jace.jar to TM Pod
+  kubernetes.core.k8s_exec:
+    namespace: "{{ cp4ba_project_name }}"
+    pod: "{{ tm_pod.resources[0].metadata.name }}"
+    command: >
+      curl -kv
+      'https://{{ cp4ba_cr_meta_name }}-cpe-svc.{{ cp4ba_project_name }}.svc.cluster.local:9443/clientDownload?command=download&filePath=Jace.jar'
+      -o /opt/ibm/extTM/Jace.jar
+  register: command_status
+  retries: 40
+  delay: 15
+
+- name: Download pe.jar to TM Pod
+  kubernetes.core.k8s_exec:
+    namespace: "{{ cp4ba_project_name }}"
+    pod: "{{ tm_pod.resources[0].metadata.name }}"
+    command:
+      "curl -kv
+      'https://{{ cp4ba_cr_meta_name }}-cpe-svc.{{ cp4ba_project_name }}\
+      .svc.cluster.local:9443/clientDownload?command=download&filePath=/FileNet/Download/PE/pe.jar'
+      -o /opt/ibm/extTM/pe.jar"
+  register: command_status
+  retries: 40
+  delay: 15
+
+- name: Download peResources.jar to TM Pod
+  kubernetes.core.k8s_exec:
+    namespace: "{{ cp4ba_project_name }}"
+    pod: "{{ tm_pod.resources[0].metadata.name }}"
+    command: >
+      curl -kv
+      'https://{{ cp4ba_cr_meta_name }}-cpe-svc.{{ cp4ba_project_name }}.svc.cluster.local:9443/clientDownload?command=download&filePath=peResources.jar'
+      -o /opt/ibm/extTM/peResources.jar
+  register: command_status
+  retries: 40
+  delay: 15
+
+- name: Get TM Pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ cp4ba_project_name }}"
+    label_selectors:
+      - "app={{ cp4ba_cr_meta_name }}-tm-deploy"
+  register: pods
+  retries: 40
+  delay: 15
+
+- name: Delete TM pods
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Pod
+    state: absent
+    namespace: "{{ cp4ba_project_name }}"
+    name: "{{ item.metadata.name }}"
+  loop: "{{ pods.resources }}"
+
+- name: Wait for TM Deployment Available State
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: wait-resource-condition
+  vars:
+    common_api_version: v1
+    common_resource_kind: Deployment
+    common_resource_name: "{{ cp4ba_cr_meta_name }}-tm-deploy"
+    common_resource_namespace: "{{ cp4ba_project_name }}"
+    common_condition_name: Available
+    common_retries: 80
+    common_delay: 15

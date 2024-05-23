@@ -1,0 +1,253 @@
+---
+- name: 10 - Download validate
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+  - block:
+    - name: Record deployer state
+      include_role:
+        name: record-deployer-state
+
+    - name: Load global config
+      include_role:
+        name: load-global-config
+
+    - name: Load vault config
+      include_role:
+        name: load-vault-config
+
+    - set_fact:
+        secret_group: "{{ secret_group_param }}"
+
+    - set_fact:
+        secret_group: "{{ environment_name }}"
+      when: secret_group_param | default("") == ""
+
+    - name: Merge configuration
+      include_role:
+        name: merge-config
+      vars:
+        path_to_config_dir: "{{ config_dir }}"
+
+    - set_fact:
+        _vault_secrets: "{{ lookup('ansible.builtin.env', 'VAULT_SECRETS') }}"
+
+    - name: Set vault secrets if specified
+      include_role:
+        name: vault-set-secret
+      vars:
+        _p_vault_secrets: "{{ _vault_secrets }}"
+      when: _vault_secrets != ""
+        
+    - name: Validate variables
+      include_role:
+        name: validate-variables
+
+    - name: Lint configuration
+      include_role:
+        name: lint-config
+      vars:
+        path_to_generators_dir: "{{ generators_dir | default([(playbook_dir | dirname),'/automation-generators'] | join) }}"
+
+    - name: Store the entitled registry key in the vault if one was passed in the environment variable
+      include_role:
+        name: vault-set-secret
+      vars:
+        secret_name: "ibm_cp_entitlement_key"
+        secret_group: "{{ environment_name }}"
+        secret_payload: "{{ cp_entitlement_key }}"
+      when: 
+      - (cp_entitlement_key | default("")) != ""
+    when: not (cpd_check_only | default(False) | bool)
+
+- name: 20 - Download CLIs and case files
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+  - block:
+    - name: Download CLIs
+      include_role:
+        name: download-cli
+      when: not (cpd_check_only | default(False) | bool)
+
+    - name: Download dependent CLIs and commands for the Cloud Paks
+      include_role:
+        name: download-cp-dependencies
+      when: not (cpd_check_only | default(False) | bool)
+
+# --- Mirroring with ibm-pak tool - BEGIN -----------------
+
+    - name: Remove ~/.ibm-pak directory in case it exists
+      file:
+        path: "~/.ibm-pak"
+        state: absent
+
+    - name: Init _ibm_pak_used flag (False)
+      set_fact:
+        _ibm_pak_used: False
+
+    - name: Save CASE files for Cloud Pak for Integration
+      include_role:
+        name: cp4i-case-save-ibm-pak
+      loop: "{{ all_config.cp4i | default([]) }}"
+      loop_control:
+        loop_var: _p_current_cp4i_cluster
+
+    # <-- Call here case save roles for other ibm-pak based cloud paks
+
+    - name: If ibm-pak is used call its version of mirroring
+      block:
+
+      - name: Call ibm-pak based mirroring
+        include_role: 
+          name: cp-mirror-ibm-pak
+
+      - name: Copy ibm-pak to status dir
+        command: cp -r ~/.ibm-pak {{ status_dir }}/ibm-pak
+
+      when: (_ibm_pak_used | default(False) | bool) 
+
+# --- Mirroring with ibm-pak tool - END -------------------
+
+
+    when: not (cpd_check_only | default(False) | bool)
+
+
+# The following code will not be executed if _ibm_pak_used it True
+# The reason for this is that ibm-pak has its own logic for 
+# downloading CASEs, creating mirror manifests and mirroring images
+
+- name: 30 - Mirror images
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+  - block:
+
+    - block:
+      - name: Get IBM Entitled Registry key
+        include_role: 
+          name: vault-get-secret
+        vars:
+          secret_name: "ibm_cp_entitlement_key"
+          secret_group: "{{ environment_name }}"
+          _p_secret_variable: ibm_cp_entitlement_key
+
+      - name: Fail if the entitlement key was not found in the vault
+        fail:
+          msg: "Entitlement key must be stored in vault secret ibm_cp_entitlement_key."
+        when: ibm_cp_entitlement_key == ""
+
+      when:
+      - not (cpd_skip_mirror | bool)
+
+    - name: Save case files
+      include_role:
+        name: cp4d-case-save
+      loop: "{{ all_config.cp4d | default([]) }}"
+      loop_control:
+        loop_var: _p_current_cp4d_cluster
+
+    # Mirror images to portable or private registry
+    - block:
+
+      # Mirror to portable image registry
+      - name: Mirror images to portable image registry
+        include_role:
+          name: cp4d-mirror-images
+        vars:
+          _p_target_registry_hostname: "{{ _v_portable_registry }}"
+          _p_target_registry_port: "{{ _v_portable_registry_port }}"
+          _p_case_dir: "{{ status_dir }}/cp4d/case"
+          _p_processor_arch: "{{ _openshift_processor_arch | default('amd64') }}"
+        loop: "{{ all_config.cp4d | default([]) }}"
+        loop_control:
+          loop_var: _p_current_cp4d_cluster
+        when:
+        - not (cpd_skip_portable_registry | bool)
+
+      # Mirror to private registry
+      - block:
+
+        - name: Retrieve private image registry details
+          set_fact:
+            _image_registry: "{{ all_config.image_registry | first | default({}) }}"
+
+        - name: Fail if no private image registry found
+          fail:
+            msg: "No private image registry was found"
+          when: _image_registry=={}
+
+        - name: Mirror images from entitled to private registry
+          include_role: 
+            name: cp4d-mirror-images
+          vars:
+            _p_target_registry_hostname: "{{ _image_registry.registry_host_name }}"
+            _p_target_registry_port: "{{ _image_registry.registry_port | default('') }}"
+            _p_target_registry_namespace: "{{ _image_registry.registry_namespace | default('') }}"
+            _p_target_registry_credentials_secret: "image-registry-{{ _image_registry.name }}"
+            _p_case_dir: "{{ status_dir }}/cp4d/case"
+            _p_processor_arch: "{{ _openshift_processor_arch | default('amd64') }}"
+          loop: "{{ all_config.cp4d | default([]) }}"
+          loop_control:
+            loop_var: _p_current_cp4d_cluster
+        when:
+        - (cpd_skip_portable_registry | bool)
+      
+      when:
+      - not (cpd_skip_mirror | bool)
+    when: 
+    - not (cpd_check_only | default(False) | bool)
+    - not (_ibm_pak_used | default(False) | bool)  # not executed if ibm-pak tool is used
+
+
+- name: 40 - Save config and deployer
+  hosts: localhost
+  connection: local
+  become: True
+  gather_facts: False
+
+  vars:
+    ansible_callback_diy_runner_on_skipped_msg: ""
+    ansible_callback_diy_runner_on_ok_msg: ""
+    ansible_callback_diy_playbook_on_include_msg: ""
+
+  tasks:
+  - name: Archive the deployer directory
+    community.general.archive:
+      path: /cloud-pak-deployer
+      dest: "{{ status_dir }}/cloud-pak-deployer.tar.gz"
+      mode: u=rwx,g=r,o=r
+
+  - name: Delete deployer config if existent
+    file:
+      path: "{{ status_dir }}/cpd-config"
+      state: absent
+
+  - name: Copy the deployer configuration
+    copy:
+      src: "{{ config_dir }}/"
+      dest: "{{ status_dir }}/cpd-config/"

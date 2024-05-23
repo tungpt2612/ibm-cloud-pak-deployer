@@ -1,0 +1,10 @@
+---
+- name: Create cp4d-apply-kubelet-config.sh script that will update the Kubelet configuration
+  template:
+    src: cp4d-apply-kubelet-config.j2
+    dest: "{{ status_dir }}/openshift/cp4d-apply-kubelet-config.sh"
+
+- name: Put cp4d-apply-kubelet-config.sh script into config map
+  shell:
+    oc set data -n kube-system cm/cloud-pak-node-fix-scripts \
+        --from-file={{ status_dir }}/openshift/cp4d-apply-kubelet-config.sh

@@ -1,0 +1,9 @@
+---
+
+- name: "Apply operator group template for namespace {{ current_cp4i_cluster.project }}"
+  include_tasks: apply-template.yml
+  vars:
+    _p_template: "operator-group.j2"
+    _p_dest_name: "operator-group.yml"
+    operator_group_name: "ibm-integration-operatorgroup"
+    operator_group_namespace: "{{ current_cp4i_cluster.project }}"

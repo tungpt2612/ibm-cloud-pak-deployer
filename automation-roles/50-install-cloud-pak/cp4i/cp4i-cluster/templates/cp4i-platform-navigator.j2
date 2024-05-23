@@ -1,0 +1,17 @@
+---
+apiVersion: integration.ibm.com/v1beta1
+kind: PlatformNavigator
+metadata:
+  name: {{instance_properties.name}}
+  namespace: {{current_cp4i_cluster.project}}
+spec:
+  license:
+    accept: {{ _cpd_accept_licenses | default(False) }} 
+    license: {{instance_properties.license}}
+  requestIbmServices:
+    licensing: false
+  mqDashboard: true
+  replicas: 1
+  storage:
+    class: {{ocp_storage_class_file}}
+  version: {{current_cp4i_cluster.cp4i_version}}

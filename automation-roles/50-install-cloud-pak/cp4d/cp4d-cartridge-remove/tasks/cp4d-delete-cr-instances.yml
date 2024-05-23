@@ -1,0 +1,78 @@
+---
+- name: Delete all Analytics Engine instances
+  include_role:
+    name: cp4d-instance-analyticsengine
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "analyticsengine"
+
+- name: Delete all Cognos Analytics instances
+  include_role:
+    name: cp4d-instance-cognos
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "cognos_analytics"
+
+- name: Delete all EnterpriseDB instances
+  include_role:
+    name: cp4d-instance-cpd-edb
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "cpd_edb"
+
+- name: Delete all DataStage instances
+  include_role:
+    name: cp4d-instance-datastage
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "datastage_ent_plus"
+
+- name: Delete all Db2 OLTP instances
+  include_role:
+    name: cp4d-instance-db2oltp
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "db2oltp"
+
+- name: Delete all Data Management Console instances
+  include_role:
+    name: cp4d-instance-dmc
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "dmc"
+
+- name: Delete all Data Virtualization instances
+  include_role:
+    name: cp4d-instance-dv
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "dv"
+
+- name: Delete all OpenPages instances
+  include_role:
+    name: cp4d-instance-openpages
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "openpages"
+
+- name: Delete all Watson Assistant instances
+  include_role:
+    name: cp4d-instance-watson_assistant
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "watson_assistant"
+
+- name: Delete all Watson Discovery instances
+  include_role:
+    name: cp4d-instance-watson_discovery
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "watson_discovery"
+
+- name: Delete all watsonx.ai instances
+  include_role:
+    name: cp4d-instance-watsonx_ai
+  vars:
+    _p_delete_all_instances: True
+  when: (_current_cartridge_cr.olm_utils_name | default("")) == "watsonx_ai"
+

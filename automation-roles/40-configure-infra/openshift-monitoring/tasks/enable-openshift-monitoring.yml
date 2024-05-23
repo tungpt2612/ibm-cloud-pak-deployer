@@ -1,0 +1,46 @@
+---
+- set_fact:
+    _oc_monitoring_persist_sc: "{{ _p_openshift_monitoring.pvc_storage_class | default ('') }}"
+    _oc_monitoring_persist_size_gb: "{{ _p_openshift_monitoring.pvc_storage_size_gb | default ('100') }}"
+    _oc_remote_rewrite_url: "{{ _p_openshift_monitoring.remote_rewrite_url | default ('') }}"
+    _oc_monitoring_retention_period: "{{ _p_openshift_monitoring.retention_period | default ('') }}"
+
+- name: Create cluster monitor configuration file
+  template:
+    src: enable-openshift-monitoring.j2
+    dest: "{{ status_dir }}/openshift/{{ current_openshift_cluster.name }}-cluster-monitor-config.yaml"
+
+- name: Create cluster monitor configuration
+  shell: |
+    oc apply -f {{ status_dir }}/openshift/{{ current_openshift_cluster.name }}-cluster-monitor-config.yaml
+
+- name: Create user workload cluster monitor configuration file
+  template:
+    src: configure-user-workload-monitoring.j2
+    dest: "{{ status_dir }}/openshift/{{ current_openshift_cluster.name }}-user-workload-cluster-monitor-config.yaml"  
+
+- name: Create cluster monitor configuration
+  shell: |
+    oc apply -f {{ status_dir }}/openshift/{{ current_openshift_cluster.name }}-user-workload-cluster-monitor-config.yaml
+
+- name: Wait until pods are created in openshift-monitoring project
+  shell: oc get po -n openshift-monitoring 2>/dev/null | wc -l
+  register: _oc_openshift_monitoring_pods
+  retries: 10
+  delay: 30
+  until: _oc_openshift_monitoring_pods.stdout != "0"    
+
+- name: Wait until openshift-monitoring prometheus pods are ready
+  shell: oc wait -n openshift-monitoring --for=condition=Ready pod -l app.kubernetes.io/name=prometheus --timeout=240s
+  register: _openshift_user_workload_pod
+
+- name: Wait until pods are created in openshift-user-workload-monitoring project
+  shell: oc get po -n openshift-user-workload-monitoring 2>/dev/null | wc -l
+  register: _oc_user_workload
+  retries: 10
+  delay: 30
+  until: _oc_user_workload.stdout != "0"    
+
+- name: Wait until openshift-user-workload-monitoring pods are ready
+  shell: oc wait -n openshift-user-workload-monitoring --for=condition=Ready pod --all --timeout=240s
+

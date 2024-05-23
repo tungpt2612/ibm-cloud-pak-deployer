@@ -1,0 +1,7 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ _nfs_storage_class }}
+provisioner: {{ nfs_storage_provisioner_name }}
+parameters:
+  archiveOnDelete: "false"

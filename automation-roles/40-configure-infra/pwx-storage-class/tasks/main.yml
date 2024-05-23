@@ -1,0 +1,5 @@
+---
+# Currently, Cloud Pak Deployer supports installation and configuration of Portworx on IBM Cloud only.
+# Handling of the additional classes needed for CP4D is done in stage 40 - Install Cloud Pak.
+- include_tasks: ibmcloud-pwx.yml  
+  when: cloud_platform == 'ibm-cloud'  

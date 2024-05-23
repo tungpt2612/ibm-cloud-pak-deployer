@@ -1,0 +1,17 @@
+{
+   "datasource_type":"{{ _cp4d_datasource_type_asset_id[0] }}",
+   "description":"",
+   "name":"{{ _cp4d_database_name }}",
+   "origin_country": "us",
+   "properties":{
+      "database":"{{ _cp4d_database_database }}",
+      "port":"{{ _cp4d_database_port }}",
+      "host":"{{ _cp4d_database_hostname }}",
+      "username":"{{ _cp4d_database_credentials_username }}",
+      "password":"{{ _cp4d_database_credentials_password }}",
+{% if not ( _cp4d_database_ssl_certificate == "") %}
+      "ssl_certificate":"{{ _cp4d_database_ssl_certificate_line_breaks }}",
+{% endif %}
+      "ssl":"{{ _cp4d_database_port_ssl|lower }}"
+   }
+}

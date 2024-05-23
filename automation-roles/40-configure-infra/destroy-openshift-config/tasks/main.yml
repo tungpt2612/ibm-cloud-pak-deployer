@@ -1,0 +1,12 @@
+---      
+- name: Show OpenShift cluster that is being processed
+  debug:
+    msg: "Handling OpenShift cluster {{ current_openshift_cluster.name }}"
+
+- name: Destroy the OpenShift Container Storage for IBM Cloud
+  include_tasks: ibmcloud-destroy-ocs.yml
+  when: cloud_platform == 'ibm-cloud'
+
+- name: Destroy the OpenShift Container Storage for AWS
+  include_tasks: aws-destroy-ocs.yml
+  when: cloud_platform == 'aws'

@@ -1,0 +1,49 @@
+- name: Get postgresql pod
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ cp4ba_postgresql_project }}"
+    label_selectors:
+      - app=postgresql
+  register: postgresql_pod
+
+# Based on https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/latest?topic=studio-creating-databases
+- name: APPDB DB
+  kubernetes.core.k8s_exec:
+    namespace: "{{ cp4ba_postgresql_project }}"
+    pod: "{{ postgresql_pod.resources[0].metadata.name }}"
+    command: >
+      bash -c "
+        psql postgresql://postgres:$POSTGRES_PASSWORD@localhost:5432 <<-EOF
+        -- create a new user
+        create user appdb with password '{{ cp4ba_postgresql_universal_password }}';
+
+        -- create database appdb
+        create database appdb owner appdb;
+
+        -- The following grant is used for databases
+        grant all privileges on database appdb to appdb;
+      EOF"
+  register: command_status
+
+# Based on https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/latest?topic=studio-creating-databases
+- name: BASDB DB
+  kubernetes.core.k8s_exec:
+    namespace: "{{ cp4ba_postgresql_project }}"
+    pod: "{{ postgresql_pod.resources[0].metadata.name }}"
+    command: >
+      bash -c "
+        psql postgresql://postgres:$POSTGRES_PASSWORD@localhost:5432 <<-EOF
+        -- create the user
+        CREATE ROLE basdb WITH INHERIT LOGIN ENCRYPTED PASSWORD '{{ cp4ba_postgresql_universal_password }}';
+
+        -- create the database:
+        CREATE DATABASE basdb WITH OWNER basdb ENCODING 'UTF8';
+        GRANT ALL ON DATABASE basdb to basdb;
+
+        -- Connect to your database and create schema
+        \c basdb;
+        SET ROLE basdb;
+        CREATE SCHEMA IF NOT EXISTS basdb AUTHORIZATION basdb;
+      EOF"
+  register: command_status

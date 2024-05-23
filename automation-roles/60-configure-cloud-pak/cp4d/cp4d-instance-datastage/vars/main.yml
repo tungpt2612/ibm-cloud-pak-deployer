@@ -1,0 +1,13 @@
+---
+# vars file for cp4d-provision-datastage-instance
+
+#
+# DataStage instance parameters
+#
+#
+cp4d_datastage_addon_type: datastage
+cp4d_datastage_size_options:
+  - 'small'
+  - 'medium'
+  - 'large'
+
